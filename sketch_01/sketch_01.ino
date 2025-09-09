@@ -43,7 +43,7 @@ void setup()
 {
     Serial.begin(9600);
     delay(10);
-    Serial.println("=== Node Example 02 ===");
+    Serial.println("=== Node Example 02 ===เเเเเเเเเเเเเเเเเเเเเเเเเเเเเเเเเเเ");
 
     pinMode(ALERT_PIN, INPUT_PULLUP);
     pinMode(BUILTIN_LED, OUTPUT);
