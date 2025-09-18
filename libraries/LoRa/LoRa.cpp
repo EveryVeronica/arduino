@@ -54,6 +54,51 @@ bool LoRa::sendLoRaAlert(LoRaPacket &packet)
     return ok;                 // คืนค่า true/false
 }
 
+
+bool LoRa::alert(uint8_t target_id){
+    LoRaPacket data;
+    data.smgType = 0x02;
+    data.targetId = target_id;
+    return sendData(data);
+}
+
+
+bool LoRa::sendData (LoRaPacket &data){
+    // สร้าง buffer ขนาดเท่ากับ struct
+    uint8_t buf[sizeof(LoRaPacket)];
+    //คัดลอกข้อมูล struct ไปยัง buffer
+    memcpy(buf,&data,sizeof(LoRaPacket));
+    bool ok = rf95.send(buf, sizeof(buf));
+    if (ok)
+        rf95.waitPacketSent(); // รอจนส่งเสร็จจริง
+
+    return ok; //คืนค่า true / false
+}
+
+LoRaPacket LoRa::receiveData(){
+    LoRaPacket data;
+
+    if (rf95.available())
+    {   uint8_t buf[sizeof(LoRaPacket)] ={0}:
+        uint8_t len = sizeof(buf);
+
+        if (rf95.recv(buf, &len))
+        {
+
+            if (len == sizeof(LoRaPacket))
+            {
+                memcpy(&data,buf,sizeof(LoRaPacket));
+                return data
+            }
+            
+            /* code */
+        }
+        
+        /* code */
+    }
+    
+}
+
 void LoRa::_get()
 {
     if (rf95.available())

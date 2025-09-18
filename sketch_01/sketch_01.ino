@@ -1,6 +1,4 @@
-#include <LoRa.h>
-#include <ESP8266WiFi.h>
-#include <Arduino.h>
+#include <Lora>
 #define ALERT_PIN D3
 #define BUILTIN_LED 2
 #define RELAY_PIN D2
@@ -22,7 +20,7 @@ unsigned long lastSendTime = 0;
 unsigned long releaseTime = 0;
 unsigned long startTime = 0; // เวลาเริ่มระบบ
 bool alertActive = false;
-
+bool senderActive = false;
 LoRaPacket packet = {
     NETWORK_ID,
     NODE_ID,
@@ -43,7 +41,7 @@ void setup()
 {
     Serial.begin(9600);
     delay(10);
-    Serial.println("=== Node Example 02 === test ผ่าน");
+    Serial.println("=== Node Example 02 ===");
 
     pinMode(ALERT_PIN, INPUT_PULLUP);
     pinMode(BUILTIN_LED, OUTPUT);
@@ -59,12 +57,35 @@ void loop()
 
     bool currentState = digitalRead(ALERT_PIN); // LOW = กด, HIGH = ปล่อย
     unsigned long currentTime = millis();
-    lora._get(); // ตรวจสอบข้อความขาเข้า
+    LoRaPacket data;
+    data lora.ReceivData(); // ตรวจสอบข้อความขาเข้า
+    if (data.sourceId == 0x00 &&data.msgType == 0x01)
+    {
+        if (data.targetId == NODE_ID))
+        {
+            
+            senderActive = true;
+            /* code */
+        }
+        
+    }
 
+    if (senderActive&& millis() < millis()+data.payload)
+    {
+        LoRaPacket mydata;
+        mydata.targetId = 0x00;
+        mydata.sourceId = NODE_ID;
+        mydata.msgType = 0x01;
+        lora.senderData(mydata)
+     
+
+    }
+    
+    
     if (currentState == LOW)
     {
-        isRelease = false;
-        alertActive = false;
+        
+        alertActiisRelease = false;ve = false;
     }
 
     if (currentState == HIGH)
@@ -90,7 +111,7 @@ void loop()
             packet.msgType = MSG_STATUS;
             packet.payload = 0; // สถานะผิดปกติ
             packet.hopCount = longAlertCount;
-            lora.sendLoRaAlert(packet);
+            lora.sendData(packet);
         }
     }
     else
@@ -105,7 +126,7 @@ void loop()
             packet.msgType = MSG_ALERT;
             packet.payload = 1; // สถานะปกติ
             packet.hopCount = longAlertCount;
-            lora.sendLoRaAlert(packet);
+            lora.sendData(packet);
         }
     }
 }

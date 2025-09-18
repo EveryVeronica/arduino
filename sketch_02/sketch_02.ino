@@ -26,7 +26,9 @@ LoRaPacket pktSend;
     pkt.hopCount = random(0, 5);
     pkt.payload = random(0, 2); // ค่าจำลอง
 
-    updateNode(pkt); // อัปเดต nodeData เหมือนรับจาก LoRa จริง
+      
+      
+      nodeData เหมือนรับจาก LoRa จริง
   }
 } */
 

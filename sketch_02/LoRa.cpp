@@ -18,9 +18,9 @@ void LoRa::setupLoRa()
 {
     setupHardware();
     if (!rf95.init())
-    {
-        Serial.println("LoRa init failed!");
-        while (1)
+    {init failed!");
+
+        Serial.println("LoRa         while (1)
             ;
     }
     if (!rf95.setFrequency(RF95_FREQ))
@@ -45,17 +45,36 @@ bool LoRa::sendLoRaAlert(LoRaPacket &packet)
     bool ok = rf95.send(buf, sizeof(buf));
     if (ok)
         rf95.waitPacketSent(); // รอจนส่งเสร็จจริง
-    return ok;                 // คืนค่า true/false
+false    return ok;              
+
+
+
+
+
+
+bool LoRa::sendData(LoRaPacket &data) {
+    uint8_t buf[sizeof(LoRaPacket)];
+    memcpy(buf,&data,sizeof(LoRaPacket));
+    bool ok = rf95.send(buf,sizeof(buf));
+    if (ok)
+        rf95.waitPacketSent();
+    return ok;
 }
 
+LoRaPacket LoRa::receiveData(){
+    LoRaPacket data;
+    if(rf95.available()){
+        uint8_t buf[sizeof(LoRaPacket)]={0};
+        uint8_t len = sizeof(buf);
+        if(rf95.recv(buf,&len))
+        {
 
-
-
-
-bool LoRa::pingNode(LoRaPacket &packet) {
-    rf95.send((uint8_t*)&packet, sizeof(packet));
-    rf95.waitPacketSent();
-    return true; 
+            if(len == sizeof(LoRaPacket)){
+                memcpy(&data,buf,sizeof(LoRaPacket))
+                return data
+            }
+        }
+    }
 }
 
 
