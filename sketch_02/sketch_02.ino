@@ -1,104 +1,119 @@
+#include "UIManager.h"
+#include "LoRaGateway.h"
 
-#include "modules/LoRa.h"
-#include "modules/UIManager.h"
+#define MAX_NODES 20
+#define NODE_TIMEOUT 2000UL // รอ 5 วินาที
 
 // ========== Global Variables ==========
-unsigned long countdown = 0; // ตัวนับถอยหลัง
+unsigned long countdown = 0;             // ตัวนับถอยหลัง
+static unsigned long lastDraw = 0;       // ตัวจับเวลา UI
+bool isRunning = false;                  // สถานะการทำงาน
+int currentIndex = 0;
+unsigned long lastPingTime = 0;
 
-LoRa lora;
+// Network define
+#define DEFAULT_NETWORK_ID 0x00
+#define DEFAULT_SERVER_ID 0x0A
+
+LoRaGateway lora;
 UIManager ui;
-LoRaPacket pktSend;
-
-#define NETWORK_ID 0x01
-#define NODE_ID 0x00
-/* void simulateNodes()
-{
-  static unsigned long lastSim = 0;
-  if (millis() - lastSim > 1000)
-  { // ทุก 2 วินาที สร้าง packet ใหม่
-    lastSim = millis();
-
-    LoRaPacket pkt;
-    pkt.networkId = 1;
-    pkt.sourceId = random(0, 20); // Node ID 1-9
-    pkt.targetId = 0;
-    pkt.msgType = random(0, 2);
-    pkt.hopCount = random(0, 5);
-    pkt.payload = random(0, 2); // ค่าจำลอง
-
-      
-      
-      nodeData เหมือนรับจาก LoRa จริง
-  }
-} */
 
 void setup()
 {
-  Serial.begin(115200);
+    Serial.begin(115200);
+    delay(10);
+    Serial.println("=== Server Example 02 ===");
 
-  lora.setupLoRa();
-  ui.begin();
+    ui.begin();
+    lora.setupLoRa();
 }
 
 void loop()
 {
+    unsigned long now = millis();
 
-  // รับ packet
-  if (rf95.available())
-  {
-    LoRaPacket packet;
-    uint8_t buf[sizeof(LoRaPacket)];
-    uint8_t len = sizeof(buf);
-    if (rf95.recv(buf, &len))
+    uint8_t nodeIDs[MAX_NODES] = {0x01, 0x02, 0x03, 0x04, 0x05,
+                                  0x06, 0x07, 0x08, 0x09, 0x0A,
+                                  0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+                                  0x10, 0x11, 0x12, 0x13, 0x14};
+
+
+
+    // ส่ง ping Node ทีละตัว หรือ timeout
+    if (!isRunning || now - lastPingTime > NODE_TIMEOUT)
     {
-      if (len == sizeof(LoRaPacket))
-      {
-        memcpy(&packet, buf, sizeof(packet));
-
-        if(packet.msgType == 0x03) {
-           ui.updateNode(packet); // อัปเดตข้อมูล nodeData
-        }else{
-           ui.nodeId = packet.sourceId; // เก็บ Node ID ล่าสุดที่รับมา
-           ui.payload = packet.payload; // เก็บ Payload ล่าสุดที่รับมา
-           countdown += 60UL * 5;       // เพิ่มเวลา 5 นาที
+        // ตรวจสอบ timeout
+        if (isRunning && now - lastPingTime > NODE_TIMEOUT)
+        {
+            Serial.print("Node ");
+            Serial.print(nodeIDs[currentIndex]);
+            Serial.println(" timeout!");
+            currentIndex++;
+            if (currentIndex >= MAX_NODES) currentIndex = 0;
+            isRunning = false; // reset เพื่อส่ง Node ถัดไป
         }
-      }
+
+        lastPingTime = now;
+
+        Pk.target_id = nodeIDs[currentIndex];
+        Pk.payload = 2;//วินาที
+        Pk.network_id = DEFAULT_NETWORK_ID;
+        Pk.source_id = DEFAULT_SERVER_ID;
+        Pk.msgType = MSG_ACK;
+
+        lora.LoRa_txMode(Pk);
+
+        Serial.print("=== ส่ง ping Node ");
+        Serial.print(Pk.target_id);
+        Serial.print(" payload ");
+        Serial.println(Pk.payload);
+
+        isRunning = true;
     }
-  }
 
-  // เปลี่ยนหน้าอัตโนมัติทุก 10 วินาที
-static unsigned long lastPageChange = 0;
-static unsigned long lastPing[21] = {0}; // lastPing[1] ถึง lastPing[20]
+    // ตรวจสอบข้อความขาเข้า
+    Packet data = lora.LoRa_rxMode();
 
-if (millis() - lastPageChange > 10000)
-{
-    lastPageChange = millis();
+    if (data.target_id == DEFAULT_SERVER_ID)
+    {
+        // รับข้อความแล้ว
+        isRunning = false;
+        Serial.println("=== ได้รับข้อมูลจาก Node ===");
+        Serial.print("target_id: "); Serial.println(data.target_id);
+        Serial.print("Node ID: "); Serial.println(data.source_id);
+        Serial.print("Type: "); Serial.println(data.msgType);
+        Serial.print("Payload: "); Serial.println(data.payload);
 
-    uint8_t totalPages = (ui.nodeCount + ui.ROWS_PER_PAGE - 1) / ui.ROWS_PER_PAGE;
-    if (totalPages == 0) totalPages = 1;
+        if (data.msgType == MSG_STATUS)
+        {
+            ui.nodeId = data.source_id;
+            ui.updateNode(data);
 
-    ui.page++;
-    if (ui.page >= totalPages) ui.page = 0;
+            currentIndex++;
+            if (currentIndex >= MAX_NODES) currentIndex = 0; // วน Node ใหม่
+        }
+        else if (data.msgType == MSG_ALERT)
+        {
+            ui.nodeId = data.source_id;
+            ui.payload = data.payload;
 
-    pktSend.networkId = NETWORK_ID;
-    pktSend.sourceId = 0x00; // Server ID
-    pktSend.msgType = 0x03; // ask for status
 
-    for (uint8_t i = 1; i <= 20; i++) { // nodeId 1 ถึง 20
-        if (millis() - lastPing[i] > 1000) { // ping ทุก 1 วินาที
-            lastPing[i] = millis();
-            pktSend.targetId = i;   // ส่ง nodeId
-            lora.pingNode(pktSend); // ส่ง ping
+            if(data.payload == 0) {
+                // กรณีผิดปกติ
+                countdown = 60UL * 5; // ตั้งเวลา 5 นาที
+            } else {
+                // กรณีปกติ
+                countdown = 0; // ยกเลิกการนับถอยหลัง
+            }   
+         
         }
     }
-}
 
-  // แสดงผลทุก 1 วินาที
-  static unsigned long lastDraw = 0;
-  if (millis() - lastDraw > 1000)
-  {
-    lastDraw = millis();
-    ui.showNodesTable();
-    ui.alert(countdown);
-  }
+    // แสดงผล UI ทุก 1 วินาที
+    if (now - lastDraw > 1000)
+    {
+        lastDraw = now;
+        ui.showNodesTable();
+        ui.alert(countdown);
+    }
 }
