@@ -112,7 +112,7 @@ void UIManager::alert(unsigned long countdown)
 
         if (countdown > 0)
         {
-            countdown--;
+         
 
             display.fillRect(61, 1, 66, 11, SSD1306_BLACK);
             display.drawLine(107, 1, 107, 11, SSD1306_WHITE);

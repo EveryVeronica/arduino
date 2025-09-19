@@ -1,15 +1,14 @@
 
-
+#include "LoRaGateway.h"
 // Network define
 #define DEFAULT_NETWORK_ID 0x00
-#define DEFAULT_NODE_ID 0x05
+#define DEFAULT_NODE_ID 0x01
 
 // IO Pin
 #define ALERT_PIN D3
 #define BUILTIN_LED 2
 #define RELAY_PIN D2
 
-#include "LoRaGateway.h"
 LoRaGateway lora;
 
 #define STATUS_INTERVAL 5000        // 5 วิ
@@ -45,6 +44,10 @@ void setup()
     pinMode(RELAY_PIN, OUTPUT);
     setOutputs(false); // ปิด LED/Relay
     lora.setupLoRa();
+
+    Pk.network_id = DEFAULT_NETWORK_ID;
+    Pk.source_id = DEFAULT_NODE_ID;
+    Pk.target_id = 0x0A; // Server ID
 }
 
 // ------------------- loop -------------------
@@ -64,38 +67,41 @@ void loop()
 
     static unsigned long lastUpdate = 0;
 
-    if (countdown > 0 && millis() - lastUpdate >= 1000)
+    if (millis() - lastUpdate >= 1000)
     {
-        countdown--;
         lastUpdate = millis();
-        isRunning = false;
-        Serial.println("=== นับถอยหลัง: " + String(countdown) + " วินาที ===");
-    }
-    else if (countdown == 0)
-    {
-        if (!isRunning)
+
+        if (countdown > 0)
+        {
+            countdown--;
+            isRunning = false;
+            Serial.println("=== นับถอยหลัง: " + String(countdown) + " วินาที ===");
+        }
+        else
         {
 
-            if (currentState == LOW)
+            if (!isRunning && countdown == 0)
             {
-                Pk.payload = 1; // 1 ปกติ
-                Pk.source_id = DEFAULT_NODE_ID;
-                Pk.target_id = 0x0A;    // Server ID
-                Pk.msgType = MSG_ALERT; // ask for status
-                lora.LoRa_txMode(Pk);
-                Serial.println("=== ส่ง status ===");
-            }
-            else
-            {
-                Pk.payload = 0; // 0 ผิดปกติ
-            }
 
-            Pk.source_id = DEFAULT_NODE_ID;
-            Pk.target_id = 0x0A;     // Server ID
-            Pk.msgType = MSG_STATUS; // ask for status
-            lora.LoRa_txMode(Pk);
-            isRunning = true;
-            Serial.println("=== ส่ง status ===");
+                if (currentState == LOW)
+                {
+                    Pk.msgType = MSG_ACK ; // ask for status
+                    lora.LoRa_txMode(Pk);
+                    
+
+                    Pk.payload = 1; //ปกติ
+
+                }
+                else
+                {
+                    Pk.payload = 0; // 0 ผิดปกติ
+                }
+
+                Pk.msgType = MSG_STATUS; // ask for status
+                lora.LoRa_txMode(Pk);
+                isRunning = true;
+                Serial.println("=== ส่ง Status ===");
+            }
         }
     }
 
@@ -103,12 +109,14 @@ void loop()
     {
         isRelease = false;
         alertActive = false;
+        Pk.payload = 1; // 1 ปกติ
+        setOutputs(false); // เปิด LED/Relay
     }
 
     if (currentState == HIGH)
     {
         isRelease = true;
-
+        Pk.payload = 0; // 0 ผิดปกติ
         if (!alertActive)
         {
             alertActive = true;
@@ -125,15 +133,21 @@ void loop()
         {
             lastAlert = currentTime;
             longAlertCount = 0;
-
-            Pk.source_id = DEFAULT_NODE_ID;
-            Pk.target_id = 0x0A; // Server ID
-            Pk.payload = 0;      // 0 ผิดปกติ
+            Pk.payload = 2; // 2 ผิดปกติ
             Pk.hopCount = longAlertCount;
-            Pk.msgType = MSG_STATUS; // ask for status
+            Pk.msgType = MSG_ALERT;
             lora.LoRa_txMode(Pk);
-            isRunning = true;
-            Serial.println("=== ส่ง status ===");
+            Serial.println("=== ส่ง Alert ===");
+
+            for (size_t i = 0; i < 5; i++)
+            {
+                setOutputs(true); // เปิด LED/Relay
+                delay(500);
+                setOutputs(false); // ปิด LED/Relay
+                delay(500);
+                
+            }
+            
         }
     }
     else
@@ -144,25 +158,13 @@ void loop()
         if (isRelease && currentTime - lastAlert >= ALERT_REPEAT_INTERVAL)
         {
 
-            if (currentState == LOW)
-            {
-                Pk.payload = 1; // 1 ปกติ
-            }
-            else
-            {
-                Pk.payload = 0; // 0 ผิดปกติ
-            }
-
             longAlertCount++;
             lastAlert = currentTime;
-
-            Pk.source_id = DEFAULT_NODE_ID;
-            Pk.target_id = 0x0A; // Server ID
             Pk.hopCount = longAlertCount;
             Pk.msgType = MSG_ALERT; // ask for status
             lora.LoRa_txMode(Pk);
-            isRunning = true;
-            Serial.println("=== ส่ง status ===");
+            Serial.println("=== ส่ง Alert ===");
+            setOutputs(true); // เปิด LED/Relay
         }
     }
 }
