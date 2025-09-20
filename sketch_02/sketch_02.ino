@@ -18,13 +18,11 @@ unsigned long lastPingTime = 0;
 LoRaGateway lora;
 UIManager ui;
 
-
 // ------------------- ฟังก์ชันจัดการ LED/Relay -------------------
 void setOutputs(bool on)
 {
     digitalWrite(RELAY_PIN, on ? LOW : HIGH);
 }
-
 
 bool ping()
 {
@@ -105,16 +103,18 @@ void loop()
                 switch (data.payload)
                 {
                 case 0:
-                    setOutputs(true); // เปิด LED/Relay
-                    countdown = 60UL * 1; // ตั้งเวลา 1 นาที     // มีเหตุการณ์
+                    setOutputs(true);  // เปิด LED/Relay
+                    countdown += 10UL; // ตั้งเวลา 10 วินาที   // กรณีฉุกเฉิน
                     break;
 
                 case 1:
-                    countdown = 60UL * 1; // ตั้งเวลา 1 นาที     // กรณีปกติ
+                    countdown += 10UL;
+                    ; // ตั้งเวลา 1 นาที     // กรณีปกติ
                     break;
 
                 case 2:
-                    countdown = 60UL * 1; // ตั้งเวลา 1 นาที     // เฝ้าระวัง
+                    countdown += 10UL;
+                    ; // ตั้งเวลา 1 นาที     // เฝ้าระวัง
                     break;
                 }
             }
@@ -131,55 +131,29 @@ void loop()
         currentIndex = 0; // วน Node ใหม่
     }
 
+    // เปลี่ยนหน้าอัตโนมัติทุก 10 วินาที
+    static unsigned long lastPageChange = 0;
+    static unsigned long lastPing[21] = {0}; // lastPing[1] ถึง lastPing[20]
 
+    if (millis() - lastPageChange > 10000)
+    {
+        lastPageChange = millis();
 
+        uint8_t totalPages = (ui.nodeCount + ui.ROWS_PER_PAGE - 1) / ui.ROWS_PER_PAGE;
+        if (totalPages == 0)
+            totalPages = 1;
 
-
-
-
-
-  // เปลี่ยนหน้าอัตโนมัติทุก 10 วินาที
-static unsigned long lastPageChange = 0;
-static unsigned long lastPing[21] = {0}; // lastPing[1] ถึง lastPing[20]
-
-if (millis() - lastPageChange > 10000)
-{
-    lastPageChange = millis();
-
-    uint8_t totalPages = (ui.nodeCount + ui.ROWS_PER_PAGE - 1) / ui.ROWS_PER_PAGE;
-    if (totalPages == 0) totalPages = 1;
-
-    ui.page++;
-    if (ui.page >= totalPages) ui.page = 0;
-
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        ui.page++;
+        if (ui.page >= totalPages)
+            ui.page = 0;
+    }
 
     if (millis() - lastDraw > 1000) // แสดงผล UI ทุก 1 วินาที
     {
-        
 
-        if(countdown > 0 ){
-           countdown--;
+        if (countdown > 0)
+        {
+            countdown--;
         }
         lastDraw = millis();
         ui.showNodesTable();

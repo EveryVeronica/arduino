@@ -1,25 +1,19 @@
-
 #include "LoRaGateway.h"
 // Network define
 #define DEFAULT_NETWORK_ID 0x00
-#define DEFAULT_NODE_ID 0x01
+#define DEFAULT_NODE_ID 0x02
 
 // IO Pin
 #define ALERT_PIN D3
 #define BUILTIN_LED 2
 #define RELAY_PIN D2
-
+#define LONG_ALERT_MAX 5  // ส่ง Long Alert สูงสุด 20 รอบ
 LoRaGateway lora;
 
-#define STATUS_INTERVAL 5000        // 5 วิ
 #define ALERT_REPEAT_INTERVAL 10000 // 10 วิ
-#define ALERT_REPEAT_MAX 10
-#define SHORT_PRESS_THRESHOLD 10000 // 10 วิ
 
-unsigned long lastStatus = 0;
 unsigned long lastAlert = 0;
 bool isRelease = false;
-bool longAlertActive = false;
 int longAlertCount = 0;
 
 unsigned long releaseTime = 0;
@@ -27,11 +21,51 @@ bool alertActive = false;
 bool isRunning = false;
 unsigned long countdown = 0; // ตัวนับถอยหลัง
 
+unsigned long lastCountdownUpdate = 0;
+unsigned long lastShortAlertUpdate = 0;
+unsigned long lastLongAlertUpdate = 0;
+
+Packet data;
+
+// ตัวแปรควบคุม LED กระพริบ
+unsigned long lastBlink = 0;
+bool blinkState = false;
+int blinkCount = 0;
+
+void handleShortAlert()
+{
+    if (blinkCount < 10) // กระพริบ 5 ครั้ง
+    {
+        if (millis() - lastBlink >= 500) // ทุก 500 ms
+        {
+            lastBlink = millis();
+            blinkState = !blinkState;
+            setOutputs(blinkState);
+            if (!blinkState)
+                blinkCount++; // นับเมื่อปิดไฟแล้ว
+        }
+    }
+    else
+    {
+        setOutputs(false); // ปิด Relay หลังกระพริบครบ
+    }
+}
+
 // ------------------- ฟังก์ชันจัดการ LED/Relay -------------------
 void setOutputs(bool on)
 {
-    digitalWrite(BUILTIN_LED, on ? LOW : HIGH);
+    // digitalWrite(BUILTIN_LED, on ? LOW : HIGH);
     digitalWrite(RELAY_PIN, on ? LOW : HIGH);
+}
+
+bool every(unsigned long interval, unsigned long &lastUpdate)
+{
+    if (millis() - lastUpdate >= interval)
+    {
+        lastUpdate = millis();
+        return true;
+    }
+    return false;
 }
 
 void setup()
@@ -57,7 +91,7 @@ void loop()
     unsigned long currentTime = millis();
 
     // ตรวจสอบข้อความขาเข้า
-    Packet data = lora.LoRa_rxMode();
+    data = lora.LoRa_rxMode();
 
     if (data.source_id == 0x0A && data.msgType == MSG_ACK && data.target_id == DEFAULT_NODE_ID)
     {
@@ -65,55 +99,41 @@ void loop()
         Serial.println("=== ได้รับคำสั่งจาก Server ===");
     }
 
-    static unsigned long lastUpdate = 0;
-
-    if (millis() - lastUpdate >= 1000)
+    // นับถอยหลัง
+    if (countdown > 0 && every(1000, lastCountdownUpdate))
     {
-        lastUpdate = millis();
+        countdown--;
+        isRunning = false;
+        Serial.println("=== นับถอยหลัง: " + String(countdown) + " วินาที ===");
+    }
 
-        if (countdown > 0)
+    // 2) ถ้า countdown == 0 → ทำงานตอนหมดเวลา
+    if (countdown == 0)
+    {
+        if (!isRunning)
         {
-            countdown--;
-            isRunning = false;
-            Serial.println("=== นับถอยหลัง: " + String(countdown) + " วินาที ===");
+            isRunning = true;
+            Pk.msgType = MSG_STATUS; // ask for status
+            lora.LoRa_txMode(Pk);
+            Serial.println("=== ส่ง Status ===");
         }
-        else
+
+        if (currentState == LOW && alertActive)
         {
-
-            if (!isRunning && countdown == 0)
-            {
-
-                if (currentState == LOW)
-                {
-                    Pk.msgType = MSG_ACK ; // ask for status
-                    lora.LoRa_txMode(Pk);
-                    
-
-                    Pk.payload = 1; //ปกติ
-
-                }
-                else
-                {
-                    Pk.payload = 0; // 0 ผิดปกติ
-                }
-
-                Pk.msgType = MSG_STATUS; // ask for status
-                lora.LoRa_txMode(Pk);
-                isRunning = true;
-                Serial.println("=== ส่ง Status ===");
-            }
+            Pk.msgType = MSG_ACK;
+            lora.LoRa_txMode(Pk);
         }
     }
 
+    // ตรวจสอบปุ่ม
     if (currentState == LOW)
     {
         isRelease = false;
         alertActive = false;
-        Pk.payload = 1; // 1 ปกติ
-        setOutputs(false); // เปิด LED/Relay
+        Pk.payload = 1;    // 1 ปกติ
+        setOutputs(false); // ปิด Relay
     }
-
-    if (currentState == HIGH)
+    else
     {
         isRelease = true;
         Pk.payload = 0; // 0 ผิดปกติ
@@ -121,50 +141,41 @@ void loop()
         {
             alertActive = true;
             releaseTime = millis() + 5000UL; // อีก 5 วิ
+            blinkCount = 0;
+            blinkState = false;
         }
     }
 
-    if (isRelease && millis() < releaseTime)
+    // แจ้งเตือน
+    if (millis() < releaseTime)
     {
         // ปล่อยไม่เกิน 5 วิ
-
-        // ส่งทุก 1 วิ
-        if (currentTime - lastAlert >= 1000)
+        if (isRelease && every(1000, lastShortAlertUpdate))
         {
-            lastAlert = currentTime;
             longAlertCount = 0;
             Pk.payload = 2; // 2 ผิดปกติ
             Pk.hopCount = longAlertCount;
             Pk.msgType = MSG_ALERT;
             lora.LoRa_txMode(Pk);
-            Serial.println("=== ส่ง Alert ===");
+            Serial.println("=== ส่ง Alert (สั้น) ===");
 
-            for (size_t i = 0; i < 5; i++)
-            {
-                setOutputs(true); // เปิด LED/Relay
-                delay(500);
-                setOutputs(false); // ปิด LED/Relay
-                delay(500);
-                
-            }
-            
+            // เรียกฟังก์ชันจัดการกระพริบ
+            handleShortAlert();
         }
     }
     else
     {
         // ปล่อยค้างเกิน 5 วิ
-
-        // ส่งทุก 10 วิ
-        if (isRelease && currentTime - lastAlert >= ALERT_REPEAT_INTERVAL)
+        if (isRelease && longAlertCount < LONG_ALERT_MAX && every(10000, lastLongAlertUpdate)) //เมื่อส่งครบ 20 รอบ ให้หยุด
         {
-
             longAlertCount++;
             lastAlert = currentTime;
             Pk.hopCount = longAlertCount;
-            Pk.msgType = MSG_ALERT; // ask for status
+            Pk.msgType = MSG_ALERT;
             lora.LoRa_txMode(Pk);
-            Serial.println("=== ส่ง Alert ===");
-            setOutputs(true); // เปิด LED/Relay
+            Serial.println("=== ส่ง Alert (ยาว): " + String(longAlertCount) + " รอบ ===");
+
+            setOutputs(true); // เปิด Relay ค้าง
         }
     }
 }
